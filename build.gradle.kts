@@ -10,6 +10,7 @@ plugins {
     id("org.jetbrains.kotlin.plugin.spring") version "1.3.21"
     id("io.spring.dependency-management") version "1.0.7.RELEASE"
     id("org.springframework.boot") version "2.2.0.M1"
+    id("io.franzbecker.gradle-lombok") version "2.1"
 }
 
 kafka {
@@ -18,15 +19,21 @@ kafka {
 
 val gradleVersion = "5.2.1"
 val kotlinVersion = "1.3.21"
+val lombokVersion = "1.18.6"
 val junitJupiterVersion = "5.4.0"
 val springKafkaVersion = "2.2.4.RELEASE"
 val reactorKafkaVersion = "1.1.0.RELEASE"
 val javaVersion = JavaVersion.VERSION_1_8
 
 extra["kotlin.version"] = kotlinVersion
+extra["lombok.version"] = lombokVersion
 extra["spring-kafka.version"] = springKafkaVersion
 extra["reactor-kafka.version"] = reactorKafkaVersion
 extra["junit-jupiter.version"] = junitJupiterVersion
+
+lombok { 
+    version = lombokVersion
+}
 
 group = "com.github.daggerok"
 version = "1.0-SNAPSHOT"
