@@ -1,0 +1,6 @@
+spring:
+  output:
+    ansi:
+      enabled: always
+  application:
+    name: reactive-kafka
