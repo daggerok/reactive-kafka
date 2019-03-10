@@ -1,13 +1,14 @@
 # reactive-kafka
 Simple Reactive Kafka app by using awesome: `reactor-kafka`, `spring-webflux` and `spring-boot`!
 
-_start kafka_
+_start kafka and app_
 
 ```bash
 ./gradlew kStart
+./gradlew bootRun
 ```
 
-_test_
+_test in a parallel in a terminal_
 
 ```bash
 http :8080/help
@@ -20,8 +21,8 @@ _shutdown and cleanup_
 
 ```bash
 ./gradlew kStop
-killall -9 java
-rm -rf /tmp/kafka-logs
+./gradlew kCleanData
+./gradlew --stop
 ```
 
 resources:
