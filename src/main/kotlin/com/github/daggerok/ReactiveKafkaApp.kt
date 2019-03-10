@@ -175,9 +175,12 @@ class WebFlux(private val commandGateway: KafkaSender<String, Command>,
         ok().body(eventStore.find(index.toInt()))
       }
       path("/**") {
+        val uri = it.uri()
+        val base = "${uri.scheme}://${uri.authority}"
         ok().body(mapOf(
-            "send" to "http post ${it.uri().scheme}://${it.uri().authority} payload=fuckit",
-            "get" to "http get ${it.uri().scheme}://${it.uri().authority}"
+            "send" to "http post $base payload={payload}",
+            "find one" to "http get $base/find/{id}",
+            "get all" to "http get $base"
         ).toMono())
       }
     }
