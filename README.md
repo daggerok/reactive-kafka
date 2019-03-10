@@ -1,6 +1,8 @@
 # reactive-kafka
 Simple Reactive Kafka app by using awesome: `reactor-kafka`, `spring-webflux` and `spring-boot`!
 
+<img src="./logo_spring.png" alt="drawing" width="48%"/>  <img src="./logo_kafka.png" alt="drawing" width="50%"/>
+
 ## Flow
 
 ```bash
