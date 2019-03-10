@@ -11,7 +11,9 @@ _test_
 
 ```bash
 http :8080/help
-http :8080 payload:='{"data":"fuck it"}'
+http :8080 payload=hello
+http :8080 payload=how\ are\ u\?
+http :8080 payload='{"data":"nice!"}'
 ```
 
 _shutdown and cleanup_
@@ -19,6 +21,7 @@ _shutdown and cleanup_
 ```bash
 ./gradlew kStop
 killall -9 java
+rm -rf /tmp/kafka-logs
 ```
 
 resources:

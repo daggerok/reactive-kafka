@@ -4,3 +4,8 @@ spring:
       enabled: always
   application:
     name: reactive-kafka
+# comment this put for better kafka debug and log analysis:
+logging.level.org.apache.kafka: warn
+#logging.level.org.apache.kafka.common.utils.AppInfoParser: off
+#logging.level.org.apache.kafka.clients.producer.ProducerConfig: warn
+#logging.level.org.apache.kafka.clients.consumer.ConsumerConfig: warn

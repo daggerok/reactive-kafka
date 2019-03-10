@@ -1,7 +1,6 @@
 import org.apache.tools.ant.taskdefs.condition.Os
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.Task
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.Exec
@@ -66,16 +65,19 @@ class KafkaPlugin : Plugin<Project> {
       }
     }
 
-    val kafkaCleanHome = "kafkaCleanHome"
-    tasks.register(kafkaCleanHome, Delete::class.java) {
+    val notWindows = !Os.isFamily(Os.FAMILY_WINDOWS)
+    val kafkaCleanData = "kafkaCleanData"
+    tasks.register(kafkaCleanData, Delete::class.java) {
       group = Kafka
       description = "Remove kafka home directory"
 
       isFollowSymlinks = false
       delete(kafka.getHome())
+      if (notWindows) delete(target.file("/tmp/kafka-logs"))
 
       doLast {
         println("removed: ${kafka.getHome()}")
+        if (notWindows) println("removed: /tmp/kafka-logs")
       }
     }
 
@@ -83,7 +85,7 @@ class KafkaPlugin : Plugin<Project> {
     tasks.register(kafkaCleanArchive, Delete::class.java) {
       group = Kafka
       description = "Remove kafka archive"
-      shouldRunAfter(kafkaCleanHome)
+      shouldRunAfter(kafkaCleanData)
 
       isFollowSymlinks = false
       delete(kafka.getTar())
@@ -96,8 +98,8 @@ class KafkaPlugin : Plugin<Project> {
     tasks.register("kafkaClean", Delete::class.java) {
       group = Kafka
       description = "Cleanup all kafka-gradle-plugin files and directories"
-      dependsOn(kafkaCleanHome, kafkaCleanArchive)
-      shouldRunAfter(kafkaCleanHome, kafkaCleanArchive)
+      dependsOn(kafkaCleanData, kafkaCleanArchive)
+      shouldRunAfter(kafkaCleanData, kafkaCleanArchive)
 
       isFollowSymlinks = false
       delete(target.file(kafka.workDir))
@@ -144,7 +146,6 @@ class KafkaPlugin : Plugin<Project> {
       }
     }
 
-    val notWindows = !Os.isFamily(Os.FAMILY_WINDOWS)
     val kafkaZookeeperStart = "kafkaZookeeperStart"
     tasks.register(kafkaZookeeperStart, Exec::class.java) {
       group = Kafka
@@ -171,9 +172,10 @@ class KafkaPlugin : Plugin<Project> {
       if (notWindows) commandLine("sh", "-c", "bin/kafka-server-start.sh -daemon config/server.properties")
       else commandLine("cmd", "/c", "bin\\windows\\kafka-server-start.bat -daemon config\\server.properties")
 
-      doLast {
+      doFirst {
+        println("waiting for zoo...")
+        sleep(7000)
         println("starting up kafka broker...")
-        sleep(5000)
       }
     }
 
