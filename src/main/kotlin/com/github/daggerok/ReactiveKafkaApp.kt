@@ -2,33 +2,23 @@ package com.github.daggerok
 
 import com.fasterxml.jackson.annotation.JsonCreator
 import org.apache.kafka.clients.consumer.ConsumerConfig
-import org.apache.kafka.clients.producer.ProducerConfig
-import org.apache.kafka.clients.producer.ProducerRecord
-import org.apache.kafka.common.serialization.StringDeserializer
-import org.apache.kafka.common.serialization.StringSerializer
+import org.apache.kafka.clients.producer.*
+import org.apache.kafka.common.serialization.*
 import org.apache.logging.log4j.LogManager
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.boot.runApplication
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.*
 import org.springframework.http.MediaType.APPLICATION_JSON_UTF8
-import org.springframework.kafka.support.serializer.JsonDeserializer
-import org.springframework.kafka.support.serializer.JsonSerializer
-import org.springframework.stereotype.Repository
-import org.springframework.stereotype.Service
-import org.springframework.web.reactive.function.server.body
-import org.springframework.web.reactive.function.server.router
-import reactor.core.publisher.Mono
-import reactor.core.publisher.toFlux
-import reactor.core.publisher.toMono
+import org.springframework.kafka.annotation.EnableKafka
+import org.springframework.kafka.support.serializer.*
+import org.springframework.stereotype.*
+import org.springframework.web.reactive.function.server.*
+import reactor.core.publisher.*
 import reactor.core.scheduler.Schedulers
-import reactor.kafka.receiver.KafkaReceiver
-import reactor.kafka.receiver.ReceiverOptions
-import reactor.kafka.sender.KafkaSender
-import reactor.kafka.sender.SenderOptions
-import reactor.kafka.sender.SenderRecord
-import java.net.URI
+import reactor.kafka.receiver.*
+import reactor.kafka.sender.*
+import java.lang.RuntimeException
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.annotation.PostConstruct
@@ -41,7 +31,7 @@ data class Command @JsonCreator constructor(val payload: String? = null) // Json
 data class Event(val data: String? = null, val at: Long? = null)
 
 @Configuration// TODO: FIXME: DRY code...
-class ReactiveCommandConfig {
+class Commands {
 
   companion object {
     const val named = "command"
@@ -78,17 +68,16 @@ class ReactiveCommandConfig {
       .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetReset)
       .consumerProperty(ConsumerConfig.CLIENT_ID_CONFIG, "$id-$named-consumer")
 
-  @Bean//("commandGateway")
-  fun commandGateway() =
-      KafkaSender.create<String, Command>(commandSenderOptions())
+  @Bean
+  fun commandGateway() = KafkaSender.create<String, Command>(commandSenderOptions())
 
-  @Bean//("commandHandler")
-  fun commandHandler() =
-      KafkaReceiver.create(commandReceiverOptions<String, Command>().subscription(listOf(commandTopic)))
+  @Bean
+  fun commandHandler() = KafkaReceiver.create(commandReceiverOptions<String, Command>().subscription(listOf(commandTopic)))
 }
 
+@EnableKafka
 @Configuration // TODO: FIXME: DRY code...
-class ReactiveEventConfig {
+class Events {
 
   companion object {
     const val named = "event"
@@ -97,8 +86,8 @@ class ReactiveEventConfig {
   @Value("\${spring.kafka.bootstrap-servers:127.0.0.1:9092}")
   private lateinit var bootstrapServers: String
 
-  //@Value("\${spring.kafka.consumer.auto-offset-reset:earliest}")
-  @Value("\${spring.kafka.consumer.auto-offset-reset:latest}")
+  @Value("\${spring.kafka.consumer.auto-offset-reset:earliest}")
+  //@Value("\${spring.kafka.consumer.auto-offset-reset:latest}")
   private lateinit var autoOffsetReset: String
 
   @Bean
@@ -125,10 +114,10 @@ class ReactiveEventConfig {
       .consumerProperty(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, autoOffsetReset)
       .consumerProperty(ConsumerConfig.CLIENT_ID_CONFIG, "$id-$named-consumer")
 
-  @Bean//("eventGateway")
+  @Bean
   fun eventGateway() = KafkaSender.create<String, Event>(eventSenderOptions())
 
-  @Bean//("eventHandler")
+  @Bean
   fun eventHandler() = KafkaReceiver.create(eventReceiverOptions<String, Event>().subscription(listOf(eventTopic)))
 }
 
@@ -136,8 +125,8 @@ class ReactiveEventConfig {
 class EventStore {
   private val db = CopyOnWriteArrayList<Event>()
   fun save(event: Event) = db.add(event)
-  fun findAll() = db.toFlux().subscribeOn(Schedulers.elastic())
-  fun find(index: Int) = Mono.justOrEmpty(db.get(index)).subscribeOn(Schedulers.elastic())
+  fun findAll() = db.toFlux()
+  fun find(index: Int) = if (db.lastIndex < index) Mono.empty() else db[index].toMono()
 }
 
 @Configuration
@@ -205,11 +194,10 @@ class CommandProcessor(private val commandHandler: KafkaReceiver<String, Command
         .map { Event(it.first) }
         .map { ProducerRecord<String, Event>(eventTopic, it) }
         .map { SenderRecord.create<String, Event, Void>(it, null) }
-        .map { it.toMono() }
+        .map { it.toMono() } //.map { Flux.just(Flux.from(it)) }
         .map {
-          eventGateway
-              .send(it)
-              .subscribe { log.debug("command {} sent.") }
+          //val flux = eventGateway.sendTransactionally(Flux.from(it)) ; //flux.subscribe()
+          val send: Flux<SenderResult<Void>> = eventGateway.send(it) ; send.subscribe()
         }
         .subscribeOn(Schedulers.elastic())
         .subscribe { log.debug("event fired.") }
@@ -222,13 +210,46 @@ class EventProcessor(private val eventHandler: KafkaReceiver<String, Event>,
   @PostConstruct
   fun subscribe() {
     eventHandler
+
+        // record should be manually acknowledged
         .receive()
         .subscribeOn(Schedulers.elastic())
-        .map { it.value().copy(at = it.timestamp()) }
-        .filter { eventStore.save(it) }
-        .subscribe {
-          println("received: $it at ${Instant.ofEpochMilli(it.at ?: 0)}")
+        .map {
+          val event = it.value().copy(at = it.timestamp())
+          if (eventStore.save(event)) {
+            it.receiverOffset().acknowledge() // <== manual ack
+            return@map event
+          }
+          return@map Mono.error<RuntimeException>(RuntimeException("cannot commit"))
         }
+        .subscribe {
+          when (it) {
+            is Event -> println("received: $it at ${Instant.ofEpochMilli(it.at ?: 0)}")
+            else -> println("oops: $it")
+          }
+        }
+
+//        // records committed periodically based on interval and batch size...
+//        .receiveAutoAck().flatMap { it }
+//        .subscribeOn(Schedulers.elastic())
+//        .map {
+//          it.value().copy(at = it.timestamp())
+//        }
+//        .filter { eventStore.save(it) }
+//        .subscribe {
+//          println("received: $it at ${Instant.ofEpochMilli(it.at ?: 0)}")
+//        }
+
+//        // expensive mode: committed individually and records not delivered until the commit succeed
+//        .receiveAtmostOnce()
+//        .subscribeOn(Schedulers.elastic())
+//        .map {
+//          it.value().copy(at = it.timestamp())
+//        }
+//        .filter { eventStore.save(it) }
+//        .subscribe {
+//          println("received: $it at ${Instant.ofEpochMilli(it.at ?: 0)}")
+//        }
   }
 }
 
